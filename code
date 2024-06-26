@@ -1,0 +1,91 @@
+#define BLYNK_TEMPLATE_ID "TMPL22c8JK-Lz" // Replace with your Template ID
+#define BLYNK_TEMPLATE_NAME "smart house" // Replace with your Template Name
+#define WIFI_SSID "TOPNET_F700"
+#define WIFI_PASS "xm5rq3c1cx"
+#define AUTH "jlEqVWAmN1ecZhqYax4-fCUyqaVfoQQu" // Your Blynk authentication token
+
+#define BLYNK_PRINT Serial
+#include <ArduinoOTA.h>
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+#include <SimpleTimer.h>
+
+// Define pin connections
+#define ULTRASONIC_TRIG_PIN D2 // Pin connected to Ultrasonic sensor Trig
+#define ULTRASONIC_ECHO_PIN D3 // Pin connected to Ultrasonic sensor Echo
+#define YELLOW_LED_PIN D4 // Pin connected to Yellow LED (light controlled by app) with resistor
+
+// Define Blynk virtual pins
+#define vPIN_BUTTON_YELLOW_LED V1 // Virtual pin for manual yellow LED control
+#define vPIN_NOTIFY V2 // Virtual pin for occupancy notification
+
+BlynkTimer timer; // Timer object for managing timed events
+bool occupancyDetected = false; // Variable to store occupancy status
+
+// Blynk callback when connected
+BLYNK_CONNECTED() {
+  // Perform actions needed upon connection to Blynk
+}
+
+// Blynk virtual pin write callback for manual yellow LED control
+BLYNK_WRITE(vPIN_BUTTON_YELLOW_LED) {
+  int value = param.asInt(); // Get the value from the Blynk app
+  digitalWrite(YELLOW_LED_PIN, value); // Set the Yellow LED based on the value
+}
+
+// Function to check room occupancy
+void checkOccupancy() {
+  occupancyDetected = false; // Reset occupancy detection
+
+  // Check Ultrasonic sensor
+  long duration, distance;
+  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(ULTRASONIC_TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
+  duration = pulseIn(ULTRASONIC_ECHO_PIN, HIGH);
+  distance = (duration / 2) / 29.1;
+
+  if (distance < 100) {
+    occupancyDetected = true; // Set occupancy detected if distance is within threshold
+  }
+
+  // Notify the user if occupancy is detected
+  if (occupancyDetected) {
+    Blynk.logEvent("Occupancy detected in the room!"); // Send notification
+    Blynk.virtualWrite(vPIN_NOTIFY, 1); // Update Blynk app
+  } else {
+    Blynk.virtualWrite(vPIN_NOTIFY, 0); // Update Blynk app
+  }
+}
+
+void setup() {
+  WiFi.mode(WIFI_STA); // Set WiFi mode to station
+  Serial.begin(115200); // Start serial communication
+#ifdef LOCAL_SERVER
+  Blynk.begin(AUTH, WIFI_SSID, WIFI_PASS, LOCAL_SERVER); // Connect to Blynk local server
+#else
+  Blynk.begin(AUTH, WIFI_SSID, WIFI_PASS); // Connect to Blynk cloud server
+#endif
+  while (Blynk.connect() == false) {} // Wait for Blynk connection
+  ArduinoOTA.setHostname("my-esp8266"); // Set OTA hostname
+  ArduinoOTA.begin(); // Start OTA service
+
+  // Initialize pins
+  pinMode(ULTRASONIC_TRIG_PIN, OUTPUT); // Set ultrasonic trigger pin as output
+  pinMode(ULTRASONIC_ECHO_PIN, INPUT); // Set ultrasonic echo pin as input
+  pinMode(YELLOW_LED_PIN, OUTPUT); // Set yellow LED pin as output
+
+  // Initialize pin states
+  digitalWrite(YELLOW_LED_PIN, LOW); // Ensure Yellow LED (light) is off initially
+
+  // Set intervals for periodic tasks
+  timer.setInterval(10000L, checkOccupancy); // Check occupancy every 10 seconds
+}
+
+void loop() {
+  Blynk.run(); // Run Blynk
+  ArduinoOTA.handle(); // Handle OTA updates
+  timer.run(); // Run timers
+}
